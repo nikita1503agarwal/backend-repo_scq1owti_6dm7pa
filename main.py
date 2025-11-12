@@ -1,8 +1,13 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 
-app = FastAPI()
+from database import db, create_document, get_documents
+from schemas import Inquiry
+
+app = FastAPI(title="Hearing & Speech Clinic API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,15 +19,66 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "Hearing & Speech Therapy Clinic API running"}
 
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+@app.get("/api/services")
+def list_services():
+    services = [
+        {
+            "id": "hearing-assessment",
+            "title": "Comprehensive Hearing Assessment",
+            "desc": "Full diagnostic evaluation with certified audiologists.",
+            "icon": "ear"
+        },
+        {
+            "id": "speech-therapy",
+            "title": "Personalized Speech Therapy",
+            "desc": "Evidence-based therapy for articulation, fluency, and language.",
+            "icon": "mic"
+        },
+        {
+            "id": "hearing-aids",
+            "title": "Hearing Aids & Fittings",
+            "desc": "Latest technology with custom fitting and training.",
+            "icon": "headphones"
+        },
+        {
+            "id": "pediatric-care",
+            "title": "Pediatric Care",
+            "desc": "Gentle, child-friendly evaluations and therapy.",
+            "icon": "baby"
+        },
+        {
+            "id": "tinnitus",
+            "title": "Tinnitus Management",
+            "desc": "Counseling and sound therapy to manage ringing.",
+            "icon": "waveform"
+        }
+    ]
+    return {"services": services}
+
+@app.post("/api/inquiries")
+def create_inquiry(inquiry: Inquiry):
+    try:
+        inserted_id = create_document("inquiry", inquiry)
+        return {"status": "ok", "id": inserted_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/inquiries")
+def list_inquiries(limit: int = 20):
+    try:
+        docs = get_documents("inquiry", limit=limit)
+        # Convert ObjectId to string if present
+        for d in docs:
+            if "_id" in d:
+                d["_id"] = str(d["_id"])
+        return {"items": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/test")
 def test_database():
-    """Test endpoint to check if database is available and accessible"""
     response = {
         "backend": "✅ Running",
         "database": "❌ Not Available",
@@ -31,39 +87,26 @@ def test_database():
         "connection_status": "Not Connected",
         "collections": []
     }
-    
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
             response["database"] = "✅ Available"
             response["database_url"] = "✅ Configured"
             response["database_name"] = db.name if hasattr(db, 'name') else "✅ Connected"
             response["connection_status"] = "Connected"
-            
-            # Try to list collections to verify connectivity
             try:
                 collections = db.list_collection_names()
-                response["collections"] = collections[:10]  # Show first 10 collections
+                response["collections"] = collections[:10]
                 response["database"] = "✅ Connected & Working"
             except Exception as e:
                 response["database"] = f"⚠️  Connected but Error: {str(e)[:50]}"
         else:
             response["database"] = "⚠️  Available but not initialized"
-            
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
-    
-    # Check environment variables
-    import os
+
     response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
     response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
-    
     return response
-
 
 if __name__ == "__main__":
     import uvicorn
